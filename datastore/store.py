@@ -33,7 +33,7 @@ class Datastore:
         """Binds the datastore to a database.
         """
         self._engine = create_engine(db_url, convert_unicode=False, encoding="utf-8")
-        self._engine.echo = True
+        self._engine.echo = False
         
         self._meta.bind = self._engine
         
@@ -140,9 +140,9 @@ class Datastore:
                 q = t.insert().values(rev=bindparam("_rev"), data=bindparam("_data"), key=bindparam("_key"))
                 params = [dict(_key=key, _data=buffer(self._encode(data)), _rev="0") for key, data in mapping.iteritems() if key in new_keys]
                 session.execute(q, params)
-                
+            
             q = t.select(t.c.key.in_(mapping.keys())).with_only_columns([t.c.id, t.c.key])
-            result = q.execute().fetchall()
+            result = session.execute(q).fetchall()
             for row in result:
                 new_mapping[row.key] = dict(mapping[row.key], _id=row.id, _key=row.key)
             
@@ -194,6 +194,9 @@ class View:
         
         The session argument is the sqlalchemy session in which the updates are supposed to be done.
         """
+        if not docs:
+            return
+            
         ids = [doc['_id'] for doc in docs]
         
         t = self.table
