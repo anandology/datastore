@@ -4,10 +4,8 @@ try:
     import simplejson as json
 except ImportError:
     import json
-
-from sqlalchemy import MetaData, Table, Column, \
-                    Integer, Unicode, LargeBinary, TIMESTAMP, \
-                    create_engine, bindparam
+    
+import sqlalchemy as sa
                     
 from sqlalchemy.sql import Select
                                     
@@ -16,13 +14,13 @@ from sqlalchemy.orm import sessionmaker
 class Datastore:
     """Datastore is a simple document database on top of a relational database.
     """
-    def __init__(self, name, views):
+    def __init__(self, name, views=None):
         self.name = name
-        self.views = views
+        self.views = views or {}
         
         self._engine = None
         self.Session = None
-        self._meta = MetaData()
+        self._meta = sa.MetaData()
         self.table = self.get_table(self.name, self._meta)
         
         # Make compress_lib and encode_lib attributes so that it is possible to customize them.
@@ -32,7 +30,7 @@ class Datastore:
     def bind(self, db_url):
         """Binds the datastore to a database.
         """
-        self._engine = create_engine(db_url, convert_unicode=False, encoding="utf-8")
+        self._engine = sa.create_engine(db_url, convert_unicode=False, encoding="utf-8")
         self._engine.echo = False
         
         self._meta.bind = self._engine
@@ -44,13 +42,16 @@ class Datastore:
         
         self.Session = sessionmaker(bind=self._engine, autoflush=False, autocommit=True)
         
+    def add_view(self, name, view):
+        self.views[name] = view
+        
     def get_table(self, name, metadata):
-        return Table(name, metadata,
-            Column('id', Integer, primary_key = True, autoincrement=True),
-            Column('rev', Unicode),
-            Column('updated', TIMESTAMP),
-            Column('key', Unicode, nullable = False, unique=True),
-            Column('data', LargeBinary, nullable=False)
+        return sa.Table(name, metadata,
+            sa.Column('id', sa.Integer, primary_key = True, autoincrement=True),
+            sa.Column('rev', sa.Unicode),
+            sa.Column('updated', sa.TIMESTAMP),
+            sa.Column('key', sa.Unicode, nullable = False, unique=True),
+            sa.Column('data', sa.LargeBinary, nullable=False)
         )
         
     def _encode(self, data):
@@ -109,6 +110,9 @@ class Datastore:
             self.update_views([doc], session)
                 
         return {"id": _id, "key": key, "rev": None, "updated": None}
+        
+    def delete(self, key):
+        pass
 
     def get_many(self, keys):
         """Returns documents for given keys as a dict.
@@ -132,12 +136,12 @@ class Datastore:
             new_keys = set(key for key in mapping if key not in old_keys)
             
             if old_keys:
-                q = t.update().where(t.c.key==bindparam('_key')).values(rev=bindparam("_rev"), data=bindparam("_data"))
+                q = t.update().where(t.c.key==sa.bindparam('_key')).values(rev=sa.bindparam("_rev"), data=sa.bindparam("_data"))
                 params = [dict(_key=key, _data=buffer(self._encode(data)), _rev="0") for key, data in mapping.iteritems() if key in old_keys]
                 session.execute(q, params)
                 
             if new_keys:
-                q = t.insert().values(rev=bindparam("_rev"), data=bindparam("_data"), key=bindparam("_key"))
+                q = t.insert().values(rev=sa.bindparam("_rev"), data=sa.bindparam("_data"), key=sa.bindparam("_key"))
                 params = [dict(_key=key, _data=buffer(self._encode(data)), _rev="0") for key, data in mapping.iteritems() if key in new_keys]
                 session.execute(q, params)
             
@@ -146,12 +150,12 @@ class Datastore:
             for row in result:
                 new_mapping[row.key] = dict(mapping[row.key], _id=row.id, _key=row.key)
             
-            self.update_views(new_mapping.values(), session)  
+            self.update_views(new_mapping.values(), session) 
                 
     def view(self, name, **kwargs):
         v = self.views.get(name)
         return v.query(**kwargs)
-        
+                
     def update_views(self, docs, session):
         for view in self.views.values():
             view.update_view(docs, session)
@@ -179,8 +183,8 @@ class View:
     def _init(self, store):
         self.store = store
         self.table = self.get_table(store._meta)
-        self.table.append_column(Column("_id", Integer, index=True))
-        self.table.append_column(Column("_key", Unicode))
+        self.table.append_column(sa.Column("_id", sa.Integer, index=True))
+        self.table.append_column(sa.Column("_key", sa.Unicode))
         
     def map_docs(self, docs):
         for doc in docs:
@@ -203,7 +207,7 @@ class View:
         q = t.delete().where(t.c._id.in_(ids))
         session.execute(q)
         
-        bind_params = dict((name, bindparam(name)) for name in t.columns.keys())
+        bind_params = dict((name, sa.bindparam(name)) for name in t.columns.keys())
         q = t.insert().values(**bind_params)
         
         rows = self.map_docs(docs)
