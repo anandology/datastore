@@ -104,6 +104,7 @@ class Datastore:
                 _id = session.execute(q).inserted_primary_key[0]
             else:
                 q = t.update().where(t.c.key == key).values(data=zdata, rev=rev)
+                session.execute(q)
                 _id = row.id
                 
             doc = dict(doc, _id=_id, _key=key, _rev=None, _updated=None)
