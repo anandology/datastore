@@ -187,6 +187,17 @@ class View:
     
     def __init__(self):
         self.store = None
+        
+    @property
+    def c(self):
+        """Shortcut to acess self.table.columns.
+        """
+        return self.table.columns
+        
+    def select(self, **kw):
+        """Short cut for calling select on the table of this view.
+        """
+        return self.table.select(**kw)
     
     def _init(self, store):
         self.store = store
