@@ -6,8 +6,7 @@ Library datastore.
 
     from datastore import Datastore
     
-    store = Datastore("users")
-    store.bind("sqlite:///users.db")
+    store = Datastore("sqlite:///users.db", tablename="users")
     
     store.put("joe", {
         "username": "joe",
@@ -55,15 +54,28 @@ The map function emits, one or more rows to be inserted in the view table.
 The Datastore provides a simple API to query the view.
 
     # find user with given email.
-    store.view("index", email="joe@example.com")
+    store.query("index", email="joe@example.com")
     
     # Find user with any one of the emails.
-    store.view("index", email=["joe@example.com", "foo@bar.com"])
+    store.query("index", email=["joe@example.com", "foo@bar.com"])
     
     # It is possible to query on multiple columns comined with AND.
-    store.view("book", title="Book Title", author="Author Name")
+    store.query("book", title="Book Title", author="Author Name")
 
-If the query API is not good enough for your needs, you can always fallback to SQLAlchemy for querying.            
+If the query API is not good enough for your needs, you can always fallback to SQLAlchemy for querying.
+
+It is usually convenient to subclass `Datastore` when you have views.
+
+    class UsersStore(Datastore):
+        tablename = "users"
+        
+        def create_views(self): 
+            return {
+                "index": UsersIndex()
+            }
+            
+    store = UsersStore("sqlite:///users.db")
+    store.query("index", email="joe@example.com")
     
 # Adding Constraints
 

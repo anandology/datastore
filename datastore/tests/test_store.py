@@ -3,8 +3,7 @@ import sqlalchemy as sa
 
 class TestDatastore:
     def setup_method(self, m):
-        self.ds = Datastore("docs", views=[])
-        self.ds.bind("sqlite:///:memory:")
+        self.ds = Datastore("sqlite:///:memory:")
         
     def trim(self, doc):
         return dict((k, v) for k, v in doc.items() if not k.startswith("_"))
@@ -45,17 +44,22 @@ class TestDatastore:
             
             def map(self, doc):
                 yield {'lname': doc.get('name', '').lower()}
-
-        self.ds.add_view("lname", LNameView())
-        self.ds.bind("sqlite:///:memory:")
+                
+        class NameStore(Datastore):
+            def create_views(self):
+                return {
+                    "lname": LNameView()
+                }
+                
+        self.ds = NameStore("sqlite:///:memory:")
         
         self.ds.put("foo", {"name": "Foo"})
         self.ds.put("bar", {"name": "Bar"})
         
-        rows = self.ds.view("lname", lname="foo")
+        rows = self.ds.query("lname", lname="foo")
         assert [row['_key'] for row in rows] == ['foo']
         
-        rows = self.ds.view("lname", lname="bar")
+        rows = self.ds.query("lname", lname="bar")
         assert [row['_key'] for row in rows] == ['bar']
         
         

@@ -12,29 +12,38 @@ from sqlalchemy.orm import sessionmaker
 class Datastore:
     """Datastore is a simple document database on top of a relational database.
     """
-    def __init__(self, name, views=None):
-        self.name = name
-        self.views = views or {}
-        
-        self._engine = None
-        self.Session = None
-        self._meta = sa.MetaData()
-        self.table = self.get_table(self.name, self._meta)
+    tablename = "store"
     
-    def bind(self, db_url):
-        """Binds the datastore to a database.
-        """
-        self._engine = sa.create_engine(db_url, convert_unicode=False, encoding="utf-8")
-        self._engine.echo = True
+    def __init__(self, db_url, echo=False, tablename=None, views=None):
+        if tablename is not None:
+            self.tablename = tablename
+            
+        if views is not None:
+            self.views = views
+        else:
+            self.views = self.create_views()
+            
+        # create SQLAlchemy engine and metadata
+        self._engine = sa.create_engine(db_url, convert_unicode=False, encoding="utf-8", echo=echo)
+        self._meta = sa.MetaData(bind=self._engine)
         
-        self._meta.bind = self._engine
-        
+        # initialize table and views
+        self.table = self.get_table(self.tablename, self._meta)
         for view in self.views.values():
             view._init(self)
-        
+            
+        # create db tables if required
         self._meta.create_all()
-        
+
+        # create Session maker. This is used to create sessions when needed.
         self.Session = sessionmaker(bind=self._engine, autoflush=False, autocommit=True)
+        
+    
+    def create_views(self):
+        """This function is called by the constuctor to create the views.
+        Subclasses should extend this to provide the views.
+        """
+        return {}
         
     def add_view(self, name, view):
         self.views[name] = view
@@ -148,7 +157,10 @@ class Datastore:
             
             self.update_views(new_mapping.values(), session) 
                 
-    def view(self, name, **kwargs):
+    def query(self, name, **kwargs):
+        """Queries the view specified by the name.
+        
+        """
         v = self.views.get(name)
         return v.query(**kwargs)
                 
