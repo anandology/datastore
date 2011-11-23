@@ -7,8 +7,6 @@ except ImportError:
     
 import sqlalchemy as sa
                     
-from sqlalchemy.sql import Select
-                                    
 from sqlalchemy.orm import sessionmaker
 
 class Datastore:
@@ -22,16 +20,12 @@ class Datastore:
         self.Session = None
         self._meta = sa.MetaData()
         self.table = self.get_table(self.name, self._meta)
-        
-        # Make compress_lib and encode_lib attributes so that it is possible to customize them.
-        self.compress_lib = zlib
-        self.encode_lib = json
     
     def bind(self, db_url):
         """Binds the datastore to a database.
         """
         self._engine = sa.create_engine(db_url, convert_unicode=False, encoding="utf-8")
-        self._engine.echo = False
+        self._engine.echo = True
         
         self._meta.bind = self._engine
         
@@ -51,24 +45,16 @@ class Datastore:
             sa.Column('rev', sa.Unicode),
             sa.Column('updated', sa.TIMESTAMP),
             sa.Column('key', sa.Unicode, nullable = False, unique=True),
-            sa.Column('data', sa.LargeBinary, nullable=False)
+            sa.Column('data', JsonDataType(compress=True), nullable=False)
         )
-        
-    def _encode(self, data):
-        edata = self.encode_lib.dumps(data).encode('utf-8')
-        return self.compress_lib.compress(edata)
-    
-    def _decode(self, zdata):
-        edata = self.compress_lib.decompress(zdata)
-        return self.encode_lib.loads(edata)
-        
+                
     def _process_row(self, row):
         """Creates a document by processing a row from the result of db query.
         
         The document is created by decoding `row.data` and special keys
         `_id`, `_key`, `_rev` and `_updated` are added document from row data.
         """
-        doc = self._decode(row.data)
+        doc = row.data
         doc['_id'] = row.id
         doc['_rev'] = row.rev
         doc['_key'] = row.key
@@ -97,13 +83,12 @@ class Datastore:
             # TODO: lock the row and check revision
             q = t.select(t.c.key == key)
             row = session.execute(q).fetchone()
-            zdata = self._encode(doc)
             rev = "0"
             if not row:
-                q = t.insert().values(key=key, data=zdata, rev=rev)
+                q = t.insert().values(key=key, data=doc, rev=rev)
                 _id = session.execute(q).inserted_primary_key[0]
             else:
-                q = t.update().where(t.c.key == key).values(data=zdata, rev=rev)
+                q = t.update().where(t.c.key == key).values(data=doc, rev=rev)
                 session.execute(q)
                 _id = row.id
                 
@@ -137,13 +122,23 @@ class Datastore:
             new_keys = set(key for key in mapping if key not in old_keys)
             
             if old_keys:
-                q = t.update().where(t.c.key==sa.bindparam('_key')).values(rev=sa.bindparam("_rev"), data=sa.bindparam("_data"))
-                params = [dict(_key=key, _data=buffer(self._encode(data)), _rev="0") for key, data in mapping.iteritems() if key in old_keys]
+                q = t.update().where(
+                        t.c.key==sa.bindparam(t.c.key)
+                    ).values(
+                        rev=sa.bindparam(t.c.rev), 
+                        data=sa.bindparam(t.columns.data)
+                    )
+                    
+                params = [dict(key=key, data=data, rev="0") for key, data in mapping.iteritems() if key in old_keys]
                 session.execute(q, params)
                 
             if new_keys:
-                q = t.insert().values(rev=sa.bindparam("_rev"), data=sa.bindparam("_data"), key=sa.bindparam("_key"))
-                params = [dict(_key=key, _data=buffer(self._encode(data)), _rev="0") for key, data in mapping.iteritems() if key in new_keys]
+                q = t.insert().values(
+                    rev=sa.bindparam(t.c.rev), 
+                    data=sa.bindparam(t.c.data), 
+                    key=sa.bindparam(t.c.key)
+                )
+                params = [dict(key=key, data=data, rev="0") for key, data in mapping.iteritems() if key in new_keys]
                 session.execute(q, params)
             
             q = t.select(t.c.key.in_(mapping.keys())).with_only_columns([t.c.id, t.c.key])
@@ -208,7 +203,7 @@ class View:
         q = t.delete().where(t.c._id.in_(ids))
         session.execute(q)
         
-        bind_params = dict((name, sa.bindparam(name)) for name in t.columns.keys())
+        bind_params = dict((c.name, sa.bindparam(c)) for c in t.columns)
         q = t.insert().values(**bind_params)
         
         rows = self.map_docs(docs)
@@ -248,3 +243,27 @@ class View:
         Subclasses should override this method and yield the rows for this doc as dictionaries.
         """
         return []
+
+
+class JsonDataType(sa.types.TypeDecorator):
+    """Column for storing data encoded in JSON with optional compression.
+    """
+    impl = sa.LargeBinary
+    
+    def __init__(self, compress=False):
+        self.compress = compress
+        sa.types.TypeDecorator.__init__(self)
+
+    def process_bind_param(self, value, dialect=None):
+        if value is None:
+            return None
+        else:
+            text = json.dumps(value)
+            return buffer(zlib.compress(text))
+
+    def process_result_value(self, value, dialect=None):
+        if value is None:
+            return None
+        else:
+            text = zlib.decompress(value)
+            return json.loads(text)

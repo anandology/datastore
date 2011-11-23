@@ -1,2 +1,2 @@
 
-from store import Datastore, View
+from store import Datastore, View, JsonDataType
