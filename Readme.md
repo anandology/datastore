@@ -20,7 +20,7 @@ Under the hood, the Datastore creates a table with given name, which is `users` 
 
 Document can be any dictionary. The document is json-encoded before adding to the database.
 
-The Datastore uses SQLAlchemy to interact with the database and supports all databases that SQLAlchemy supports.
+The Datastore uses SQLAlchemy to interact with the database and supports all database engines that SQLAlchemy supports.
 
 # Views
 
