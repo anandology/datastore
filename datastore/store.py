@@ -133,7 +133,7 @@ class Datastore:
             if old_keys:
                 # name "key" has special meaning in sqlalchemy. Using key_ as name of the bindparam to avoid the clash.
                 q = t.update().where(
-                        t.c.key==sa.bindparam("_key", type_=t.c.key.type)
+                        t.c.key==sa.bindparam("_key", type_=t.c.key.type) 
                     ).values(
                         rev=sa.bindparam(t.c.rev), 
                         data=sa.bindparam(t.columns.data)
@@ -161,6 +161,15 @@ class Datastore:
     def query(self, name, **kwargs):
         """Queries the view specified by the name.
         
+        For example:
+        
+            store.query("books", author="mark twain", publisher="dover", limit=10)
+            
+        This gets translated to the following code (assuming that name of the view table is books_view):
+        
+            SELECT * FROM books_view WHERE author='mark twain' and publisher='dover' LIMIT 10
+            
+        The result is a list of dictionaries.
         """
         v = self.views.get(name)
         return v.query(**kwargs)
@@ -233,17 +242,37 @@ class View:
         rows = self.map_docs(docs)
         session.execute(q, list(rows))
         
-    def query(self, **kwargs):
-        include_docs = kwargs.pop("include_docs", False)
-        
+    def _parse_order_by(self, order_by):
+        if isinstance(order_by, list):
+            return [self._parse_order_by(x) for x in order_by]
+        elif order_by.startswith("-"):
+            return sa.desc(self.c.get(order_by[1:]))
+        else:
+            return self.c.get(order_by)
+            
+    def _prepare_query(self, **kwargs):
         q = self.table.select()
+        
+        if 'limit' in kwargs:
+            q = q.limit(kwargs.pop('limit'))
+            
+        if 'offset' in kwargs:
+            q = q.offset(kwargs.pop('offset'))
+            
+        if 'order_by' in kwargs:
+            q = q.order_by(self._parse_order_by(kwargs.pop('order_by')))
                 
         for name, value in kwargs.items():
             if isinstance(value, list):
                 q = q.where(self.table.c.get(name).in_(value))
             else:
                 q = q.where(self.table.c.get(name) == value)
-
+        return q
+        
+    def query(self, **kwargs):
+        include_docs = kwargs.pop("include_docs", False)
+        
+        q = self._prepare_query(**kwargs)
         result = q.execute()
         keys = result.keys()
         result = [dict(zip(keys, row)) for row in result]

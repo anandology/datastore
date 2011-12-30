@@ -61,8 +61,19 @@ class TestDatastore:
         
         rows = self.ds.query("lname", lname="bar")
         assert [row['_key'] for row in rows] == ['bar']
+
+class TestView:
+    def test_parse_order_by(self):
+        view = View()
+        view.table = sa.Table("test_view", sa.MetaData(), 
+            sa.Column("author", sa.Unicode, index=True),
+            sa.Column("publish_year", sa.Integer, index=True),
+        )
         
-        
+        assert str(view._parse_order_by("publish_year")) == str(view.c.publish_year)
+        assert str(view._parse_order_by("-publish_year")) == str(view.c.publish_year.desc())
+        assert str(view._parse_order_by(["author", "-publish_year"])) == str([view.c.author, view.c.publish_year.desc()])
+                
 class TestJsonDataType:
     def test_all(self):
         meta = sa.MetaData()
