@@ -131,23 +131,24 @@ class Datastore:
             new_keys = set(key for key in mapping if key not in old_keys)
             
             if old_keys:
+                # name "key" has special meaning in sqlalchemy. Using key_ as name of the bindparam to avoid the clash.
                 q = t.update().where(
-                        t.c.key==sa.bindparam(t.c.key)
+                        t.c.key==sa.bindparam("_key", type_=t.c.key.type)
                     ).values(
                         rev=sa.bindparam(t.c.rev), 
                         data=sa.bindparam(t.columns.data)
                     )
                     
-                params = [dict(key=key, data=data, rev="0") for key, data in mapping.iteritems() if key in old_keys]
+                params = [dict(_key=key, data=data, rev="0") for key, data in mapping.iteritems() if key in old_keys]
                 session.execute(q, params)
                 
             if new_keys:
                 q = t.insert().values(
                     rev=sa.bindparam(t.c.rev), 
                     data=sa.bindparam(t.c.data), 
-                    key=sa.bindparam(t.c.key)
+                    key=sa.bindparam("_key", type_=t.c.key.type)
                 )
-                params = [dict(key=key, data=data, rev="0") for key, data in mapping.iteritems() if key in new_keys]
+                params = [dict(_key=key, data=data, rev="0") for key, data in mapping.iteritems() if key in new_keys]
                 session.execute(q, params)
             
             q = t.select(t.c.key.in_(mapping.keys())).with_only_columns([t.c.id, t.c.key])
