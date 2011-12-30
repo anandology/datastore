@@ -61,6 +61,28 @@ class TestDatastore:
         
         rows = self.ds.query("lname", lname="bar")
         assert [row['_key'] for row in rows] == ['bar']
+        
+    def test_view_with_no_rows(self):
+        class NoneView(View):
+            def get_table(self, metadata):
+                return sa.Table("none_view", metadata)
+            
+            def map(self, doc):
+                return []
+                
+        class NoneStore(Datastore):
+            def create_views(self):
+                return {
+                    "none": NoneView()
+                }
+                
+        self.ds = NoneStore("sqlite:///:memory:")
+        
+        self.ds.put("foo", {"name": "Foo"})
+        self.ds.put("bar", {"name": "Bar"})
+        
+        rows = self.ds.query("none")
+        assert len(rows) == 0
 
 class TestView:
     def test_parse_order_by(self):

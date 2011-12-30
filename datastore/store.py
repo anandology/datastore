@@ -236,11 +236,11 @@ class View:
         q = t.delete().where(t.c._id.in_(ids))
         session.execute(q)
         
-        bind_params = dict((c.name, sa.bindparam(c)) for c in t.columns)
-        q = t.insert().values(**bind_params)
-        
-        rows = self.map_docs(docs)
-        session.execute(q, list(rows))
+        rows = list(self.map_docs(docs))
+        if rows:
+            bind_params = dict((c.name, sa.bindparam(c)) for c in t.columns)
+            q = t.insert().values(**bind_params)
+            session.execute(q, rows)
         
     def _parse_order_by(self, order_by):
         if isinstance(order_by, list):
